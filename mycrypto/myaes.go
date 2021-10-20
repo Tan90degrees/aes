@@ -12,6 +12,8 @@ import (
 
 var keyLetters = []byte(`~!@#$%^&*()_+{}:"<>?/.,';][=-\|0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ`) // Except `
 
+var err error
+
 const (
 	AES128 int8 = 16
 	AES192 int8 = 24
@@ -41,7 +43,8 @@ func GenKey(strength int8) *key {
 	newKey.key = make([]byte, strength)
 	var i int8 = 0
 	for ; i < strength; i++ {
-		tmp, _ = rand.Int(rand.Reader, big.NewInt(93))
+		tmp, err = rand.Int(rand.Reader, big.NewInt(93))
+		myerror.CheckError(err)
 		newKey.key[i] = keyLetters[tmp.Int64()]
 	}
 	return newKey
@@ -49,14 +52,16 @@ func GenKey(strength int8) *key {
 
 func (k key) encrypt(data []byte) []byte {
 	dst := make([]byte, aes.BlockSize)
-	block, _ := aes.NewCipher(k.key)
+	block, err := aes.NewCipher(k.key)
+	myerror.CheckError(err)
 	block.Encrypt(dst, data)
 	return dst
 }
 
 func (k key) decrypt(data []byte) []byte {
 	dst := make([]byte, aes.BlockSize)
-	block, _ := aes.NewCipher(k.key)
+	block, err := aes.NewCipher(k.key)
+	myerror.CheckError(err)
 	block.Decrypt(dst, data)
 	return dst
 }
@@ -68,7 +73,7 @@ func keyf(key *key, mykey []byte) {
 	} else if key.size > AES128 && key.size < AES256 {
 		key.key = append(mykey, emptyKey[:(AES192-key.size)]...)
 	} else if key.size > AES256 {
-		fmt.Printf("\033[0;32;31m" + "The key you input is too long!!! (do not input longer than 64 bytes)\n" + "\033[0m")
+		fmt.Printf("\033[0;32;31m" + "The key you input is too long!!! (do not input longer than 32 bytes)\n" + "\033[0m")
 		os.Exit(0)
 	} else {
 		key.key = mykey
@@ -142,4 +147,111 @@ func FileDecrypto(key key, filePath string, outPath string) {
 		endLine = append(endLine, ret[i])
 	}
 	fp2.Write(endLine)
+}
+
+func BigFileEncrypto(key key, filePath string, outPath string, bufSize int) {
+	bigTmp := make([]byte, bufSize)
+	smallTmp := make([]byte, 16)
+	fp1, err := os.Open(filePath)
+	myerror.CheckError(err)
+	defer fp1.Close()
+	fp2, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0777)
+	myerror.CheckError(err)
+	defer fp2.Close()
+	fs1, err := fp1.Stat()
+	myerror.CheckError(err)
+	bigBlockNum := fs1.Size() / int64(bufSize)
+	blockRemain := int((fs1.Size() - bigBlockNum*int64(bufSize)) / aes.BlockSize)
+	reader := bufio.NewReaderSize(fp1, bufSize)
+	writer := bufio.NewWriterSize(fp2, bufSize)
+	var i int64
+	var j int
+	var k int
+	for ; i < bigBlockNum; i++ {
+		for j = 0; j < bufSize/aes.BlockSize; j++ {
+			for k = 0; k < 16; k++ {
+				smallTmp[k], _ = reader.ReadByte()
+			}
+			enTmp := key.encrypt(smallTmp)
+			for k = 0; k < 16; k++ {
+				bigTmp[j*16+k] = enTmp[k]
+			}
+		}
+		// fp2.Write(bigTmp)
+		writer.Write(bigTmp)
+	}
+	for j = 0; j < blockRemain; j++ {
+		for i = 0; i < aes.BlockSize; i++ {
+			smallTmp[i], err = reader.ReadByte()
+			myerror.CheckError(err)
+		}
+		ret := key.encrypt(smallTmp)
+		// fp2.Write(ret)
+		writer.Write(ret)
+	}
+	for i = 0; i < aes.BlockSize; i++ {
+		smallTmp[i], err = reader.ReadByte()
+		if err != nil && err.Error() == "EOF" {
+			end := aes.BlockSize - i
+			for ; i < aes.BlockSize; i++ {
+				smallTmp[i] = byte(end)
+			}
+		}
+	}
+	ret := key.encrypt(smallTmp)
+	// fp2.Write(ret)
+	writer.Write(ret)
+}
+
+func BigFileDecrypto(key key, filePath string, outPath string, bufSize int) {
+	bigTmp := make([]byte, bufSize)
+	smallTmp := make([]byte, 16)
+	fp1, err := os.Open(filePath)
+	myerror.CheckError(err)
+	defer fp1.Close()
+	fp2, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0777)
+	myerror.CheckError(err)
+	defer fp2.Close()
+	fs1, err := fp1.Stat()
+	myerror.CheckError(err)
+	bigBlockNum := fs1.Size()/int64(bufSize) - 1
+	blockRemain := int((fs1.Size() - bigBlockNum*int64(bufSize)) / aes.BlockSize)
+	reader := bufio.NewReaderSize(fp1, bufSize)
+	writer := bufio.NewWriterSize(fp2, bufSize)
+	var i int64
+	var j int
+	var k int
+	for ; i < bigBlockNum; i++ {
+		for j = 0; j < bufSize/aes.BlockSize; j++ {
+			for k = 0; k < 16; k++ {
+				smallTmp[k], _ = reader.ReadByte()
+			}
+			enTmp := key.decrypt(smallTmp)
+			for k = 0; k < 16; k++ {
+				bigTmp[j*16+k] = enTmp[k]
+			}
+		}
+		// fp2.Write(bigTmp)
+		writer.Write(bigTmp)
+	}
+	for ; j < blockRemain-1; j++ {
+		for i = 0; i < aes.BlockSize; i++ {
+			smallTmp[i], err = reader.ReadByte()
+			myerror.CheckError(err)
+		}
+		ret := key.decrypt(smallTmp)
+		// fp2.Write(ret)
+		writer.Write(ret)
+	}
+	for i = 0; i < aes.BlockSize; i++ {
+		smallTmp[i], _ = reader.ReadByte()
+	}
+	ret := key.decrypt(smallTmp)
+	end := ret[aes.BlockSize-1]
+	endLine := make([]byte, 0)
+	for i = 0; i < aes.BlockSize-int64(end); i++ {
+		endLine = append(endLine, ret[i])
+	}
+	// fp2.Write(endLine)
+	writer.Write(endLine)
 }
