@@ -67,7 +67,7 @@ func (k key) decrypt(data []byte) []byte {
 }
 
 func keyf(key *key, mykey []byte) {
-	emptyKey := make([]byte, 16)
+	emptyKey := make([]byte, aes.BlockSize)
 	if key.size < AES128 {
 		key.key = append(mykey, emptyKey[:(AES128-key.size)]...)
 	} else if key.size > AES128 && key.size < AES256 {
@@ -151,7 +151,7 @@ func FileDecrypto(key key, filePath string, outPath string) {
 
 func BigFileEncrypto(key key, filePath string, outPath string, bufSize int) {
 	bigTmp := make([]byte, bufSize)
-	smallTmp := make([]byte, 16)
+	smallTmp := make([]byte, aes.BlockSize)
 	fp1, err := os.Open(filePath)
 	myerror.CheckError(err)
 	defer fp1.Close()
@@ -169,12 +169,12 @@ func BigFileEncrypto(key key, filePath string, outPath string, bufSize int) {
 	var k int
 	for ; i < bigBlockNum; i++ {
 		for j = 0; j < bufSize/aes.BlockSize; j++ {
-			for k = 0; k < 16; k++ {
+			for k = 0; k < aes.BlockSize; k++ {
 				smallTmp[k], _ = reader.ReadByte()
 			}
 			enTmp := key.encrypt(smallTmp)
-			for k = 0; k < 16; k++ {
-				bigTmp[j*16+k] = enTmp[k]
+			for k = 0; k < aes.BlockSize; k++ {
+				bigTmp[j*aes.BlockSize+k] = enTmp[k]
 			}
 		}
 		// fp2.Write(bigTmp)
@@ -201,11 +201,12 @@ func BigFileEncrypto(key key, filePath string, outPath string, bufSize int) {
 	ret := key.encrypt(smallTmp)
 	// fp2.Write(ret)
 	writer.Write(ret)
+	writer.Flush()
 }
 
 func BigFileDecrypto(key key, filePath string, outPath string, bufSize int) {
 	bigTmp := make([]byte, bufSize)
-	smallTmp := make([]byte, 16)
+	smallTmp := make([]byte, aes.BlockSize)
 	fp1, err := os.Open(filePath)
 	myerror.CheckError(err)
 	defer fp1.Close()
@@ -223,18 +224,18 @@ func BigFileDecrypto(key key, filePath string, outPath string, bufSize int) {
 	var k int
 	for ; i < bigBlockNum; i++ {
 		for j = 0; j < bufSize/aes.BlockSize; j++ {
-			for k = 0; k < 16; k++ {
+			for k = 0; k < aes.BlockSize; k++ {
 				smallTmp[k], _ = reader.ReadByte()
 			}
 			enTmp := key.decrypt(smallTmp)
-			for k = 0; k < 16; k++ {
-				bigTmp[j*16+k] = enTmp[k]
+			for k = 0; k < aes.BlockSize; k++ {
+				bigTmp[j*aes.BlockSize+k] = enTmp[k]
 			}
 		}
 		// fp2.Write(bigTmp)
 		writer.Write(bigTmp)
 	}
-	for ; j < blockRemain-1; j++ {
+	for j = 0; j < blockRemain-1; j++ {
 		for i = 0; i < aes.BlockSize; i++ {
 			smallTmp[i], err = reader.ReadByte()
 			myerror.CheckError(err)
@@ -254,4 +255,5 @@ func BigFileDecrypto(key key, filePath string, outPath string, bufSize int) {
 	}
 	// fp2.Write(endLine)
 	writer.Write(endLine)
+	writer.Flush()
 }
