@@ -10,10 +10,12 @@ import (
 	"os"
 )
 
-var keyLetters = []byte(`~!@#$%^&*()_+{}:"<>?/.,';][=-\|0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ`) // Except `
+// 密钥生成字符集，没有`字符
+var keyLetters = []byte(`~!@#$%^&*()_+{}:"<>?/.,';][=-\|0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ`)
 
 var err error
 
+// 加密强度
 const (
 	AES128 int8 = 16
 	AES192 int8 = 24
@@ -25,47 +27,7 @@ type key struct {
 	size int8
 }
 
-func MakeKey(mykey []byte) *key {
-	newKey := new(key)
-	newKey.size = int8(len(mykey))
-	keyf(newKey, mykey)
-	return newKey
-}
-
-func (k key) KeyString() string {
-	return string(k.key)
-}
-
-func GenKey(strength int8) *key {
-	var tmp *big.Int
-	newKey := new(key)
-	newKey.size = strength
-	newKey.key = make([]byte, strength)
-	var i int8 = 0
-	for ; i < strength; i++ {
-		tmp, err = rand.Int(rand.Reader, big.NewInt(93))
-		myerror.CheckError(err)
-		newKey.key[i] = keyLetters[tmp.Int64()]
-	}
-	return newKey
-}
-
-func (k key) encrypt(data []byte) []byte {
-	dst := make([]byte, aes.BlockSize)
-	block, err := aes.NewCipher(k.key)
-	myerror.CheckError(err)
-	block.Encrypt(dst, data)
-	return dst
-}
-
-func (k key) decrypt(data []byte) []byte {
-	dst := make([]byte, aes.BlockSize)
-	block, err := aes.NewCipher(k.key)
-	myerror.CheckError(err)
-	block.Decrypt(dst, data)
-	return dst
-}
-
+// 格式化输入密钥
 func keyf(key *key, mykey []byte) {
 	emptyKey := make([]byte, aes.BlockSize)
 	if key.size < AES128 {
@@ -80,6 +42,53 @@ func keyf(key *key, mykey []byte) {
 	}
 }
 
+// 生成格式化密钥
+func MakeKey(mykey []byte) *key {
+	newKey := new(key)
+	newKey.size = int8(len(mykey))
+	keyf(newKey, mykey)
+	return newKey
+}
+
+// 字符串密钥
+func (k key) KeyString() string {
+	return string(k.key)
+}
+
+// 生成随机密钥
+func GenKey(strength int8) *key {
+	var tmp *big.Int
+	newKey := new(key)
+	newKey.size = strength
+	newKey.key = make([]byte, strength)
+	var i int8 = 0
+	for ; i < strength; i++ {
+		tmp, err = rand.Int(rand.Reader, big.NewInt(93))
+		myerror.CheckError(err)
+		newKey.key[i] = keyLetters[tmp.Int64()]
+	}
+	return newKey
+}
+
+// 用密钥加密
+func (k key) encrypt(data []byte) []byte {
+	dst := make([]byte, aes.BlockSize)
+	block, err := aes.NewCipher(k.key)
+	myerror.CheckError(err)
+	block.Encrypt(dst, data)
+	return dst
+}
+
+// 用密钥解密
+func (k key) decrypt(data []byte) []byte {
+	dst := make([]byte, aes.BlockSize)
+	block, err := aes.NewCipher(k.key)
+	myerror.CheckError(err)
+	block.Decrypt(dst, data)
+	return dst
+}
+
+// 加密小文件
 func FileEncrypto(key key, filePath string, outPath string) {
 	tmp := make([]byte, aes.BlockSize)
 	fp1, err := os.Open(filePath)
@@ -115,6 +124,7 @@ func FileEncrypto(key key, filePath string, outPath string) {
 	fp2.Write(ret)
 }
 
+// 解密小文件
 func FileDecrypto(key key, filePath string, outPath string) {
 	tmp := make([]byte, aes.BlockSize)
 	fp1, err := os.Open(filePath)
@@ -149,6 +159,7 @@ func FileDecrypto(key key, filePath string, outPath string) {
 	fp2.Write(endLine)
 }
 
+// 加密大文件
 func BigFileEncrypto(key key, filePath string, outPath string, bufSize int) {
 	bigTmp := make([]byte, bufSize)
 	smallTmp := make([]byte, aes.BlockSize)
@@ -204,6 +215,7 @@ func BigFileEncrypto(key key, filePath string, outPath string, bufSize int) {
 	writer.Flush()
 }
 
+// 解密大文件
 func BigFileDecrypto(key key, filePath string, outPath string, bufSize int) {
 	bigTmp := make([]byte, bufSize)
 	smallTmp := make([]byte, aes.BlockSize)
